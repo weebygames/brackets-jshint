@@ -61,6 +61,8 @@ define(function (require, exports, module) {
      */
     var _configFileName = ".jshintrc";
 
+    var _defaultJshintrcPromise = new $.Deferred();
+
     /**
      * Synchronous linting entry point.
      *
@@ -129,10 +131,13 @@ define(function (require, exports, module) {
      */
     function handleHinterAsync(text, fullPath) {
         var deferred = new $.Deferred();
-        _loadConfig(fullPath)
-            .then(_applyOverrides(fullPath))
-            .done(function (cfg) {
-                deferred.resolve(handleHinter(text, fullPath, cfg));
+        _defaultJshintrcPromise
+            .always(function() {
+                _loadConfig(fullPath)
+                    .then(_applyOverrides(fullPath))
+                    .done(function (cfg) {
+                        deferred.resolve(handleHinter(text, fullPath, cfg));
+                    });
             });
         return deferred.promise();
     }
@@ -323,6 +328,25 @@ define(function (require, exports, module) {
     }
 
     /**
+     * Load a custom default config from a .jshintrc file.  Useful if the user
+     * already has a .jshintrc on their system that they want to use, instead of
+     * mirroring their settings in their brackets config.
+     * @method _loadDefaultConfig
+     * @param {string} jshintrcPath - The absolute path to the jshintrc file to load
+     */
+    function _loadDefaultConfig(jshintrcPath) {
+        var dir = FileUtils.getParentPath(jshintrcPath);
+        var fname = FileUtils.getBaseName(jshintrcPath);
+        _readConfig(dir, fname)
+            .then(function(cfg) {
+                defaultConfig = $.extend({}, defaultConfig, cfg)
+            })
+            .always(function() {
+                _defaultJshintrcPromise.resolve();
+            });
+    }
+
+    /**
      * Removes JavaScript comments from a string by replacing
      * everything between block comments and everything after
      * single-line comments in a non-greedy way.
@@ -350,5 +374,13 @@ define(function (require, exports, module) {
         scanFile: handleHinter,
         scanFileAsync: handleHinterAsync
     });
+
+    // Check for a user specified default jshintrc
+    var jshintrcPath = pm.get('jshintrc');
+    if (jshintrcPath) {
+        _loadDefaultConfig(jshintrcPath);
+    } else {
+        _defaultJshintrcPromise.resolve();
+    }
 
 });
